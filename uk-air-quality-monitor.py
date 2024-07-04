@@ -7,6 +7,10 @@
 import requests
 import pandas as pd
 import streamlit as st
+import psycopg2
+from psycopg2 import sql
+import os
+from dotenv import load_dotenv
 
 # Load environment variables from the .env file
 load_dotenv()
@@ -54,6 +58,21 @@ def fetch_air_quality(city):
         return data['data']
     else:
         return None
+    
+# Function to insert data into PostgreSQL database
+def insert_data_to_db(data, connection):
+    cursor = connection.cursor()
+    insert_query = sql.SQL("""
+        INSERT INTO air_quality (region, city, aqi, pm25, pm10, no2, so2, co, o3)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+    """)
+    for record in data:
+        cursor.execute(insert_query, (
+            record['region'], record['city'], record['aqi'], record['pm25'],
+            record['pm10'], record['no2'], record['so2'], record['co'], record['o3']
+        ))
+    connection.commit()
+    cursor.close()
 
 # Empty List to Store the Air Quality Data #
 ## This list should hold all the air quality data from the API. ##
@@ -89,11 +108,24 @@ for region, city in cities.items():
 # Use pandas to create a DataFrame, which is like a table, to store the data.
 df = pd.DataFrame(air_quality_data)
 
+# Database connection parameters
+db_params = {
+     dbname="pagila",
+     user= os.getenv('sql_user'),
+     password=os.getenv('sql_password'),
+     host=os.getenv('host'),
+     port=5432  # Default PostgreSQL port
+}
+
+# Connect to PostgreSQL and insert data
+try:
+    connection = psycopg2.connect(**db_params)
+    insert_data_to_db(air_quality_data, connection)
+    connection.close()
+    print("Data inserted into the database successfully.")
+except Exception as e:
+    print("Error connecting to the database:", e)
+
 # Display the DataFrame in the app #
 # The data will be formatted into a table for users to read #
 st.dataframe(df)
-
-# Save the DataFrame to a CSV file for later use
-csv_file = 'uk_air_quality_data.csv'
-df.to_csv(csv_file, index=False)
-st.write("Data saved to CSV:", csv_file)
